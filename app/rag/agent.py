@@ -1,128 +1,108 @@
-import json
-from pathlib import Path
-
-import faiss
-import numpy as np
+import os
 from openai import OpenAI
 
-from app.core.config import (
-    VECTORSTORE_DIR,
-    DEEPSEEK_API_KEY,
-    DEEPSEEK_BASE_URL,
-    DEEPSEEK_MODEL,
-    TOP_K,
+from app.rag.retriever import retrieve_sources
+
+try:
+    from app.core import config
+except Exception:
+    config = None
+
+
+def _get_config_value(name: str, default: str | None = None) -> str | None:
+    if config is not None:
+        settings = getattr(config, "settings", None)
+
+        if settings is not None and hasattr(settings, name):
+            return getattr(settings, name)
+
+        if hasattr(config, name):
+            return getattr(config, name)
+
+    return os.getenv(name, default)
+
+
+DEEPSEEK_API_KEY = _get_config_value("DEEPSEEK_API_KEY")
+DEEPSEEK_BASE_URL = _get_config_value("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
+DEEPSEEK_MODEL = _get_config_value("DEEPSEEK_MODEL", "deepseek-chat")
+
+client = OpenAI(
+    api_key=DEEPSEEK_API_KEY,
+    base_url=DEEPSEEK_BASE_URL,
 )
-from app.rag.ingest import embed_text
 
 
-SYSTEM_PROMPT = """
-Você é um assistente técnico agronômico do FertIntelligence.
+def _build_context(sources: list[dict]) -> str:
+    blocks = []
 
-Responda em português do Brasil, com clareza e rigor técnico.
+    for i, source in enumerate(sources, start=1):
+        blocks.append(
+            f"""[FONTE {i}]
+Arquivo: {source.get("source")}
+Página: {source.get("page")}
 
-Use prioritariamente o CONTEXTO recuperado dos documentos.
-Se o contexto não for suficiente, diga isso explicitamente.
-Não invente recomendações numéricas específicas quando os documentos não sustentarem.
-Quando fizer sentido, cite as fontes no fim usando nome do PDF e página.
+{source.get("preview")}
 """
-
-
-class FertRagAgent:
-    def __init__(self):
-        index_path = VECTORSTORE_DIR / "index.faiss"
-        documents_path = VECTORSTORE_DIR / "documents.json"
-
-        if not index_path.exists() or not documents_path.exists():
-            raise RuntimeError(
-                "Índice RAG não encontrado. Rode antes: python -m app.rag.ingest"
-            )
-
-        self.index = faiss.read_index(str(index_path))
-
-        with open(documents_path, "r", encoding="utf-8") as f:
-            self.documents = json.load(f)
-
-        self.client = OpenAI(
-            api_key=DEEPSEEK_API_KEY,
-            base_url=DEEPSEEK_BASE_URL,
         )
 
-    def retrieve(self, question: str, top_k: int = TOP_K) -> list[dict]:
-        query_vector = embed_text(question).reshape(1, -1).astype("float32")
-        scores, ids = self.index.search(query_vector, top_k)
+    return "\n".join(blocks)
 
-        results = []
 
-        for score, doc_id in zip(scores[0], ids[0]):
-            if doc_id < 0:
-                continue
+def ask_agent(question: str) -> dict:
+    sources = retrieve_sources(question, top_k=5)
+    context = _build_context(sources)
 
-            doc = self.documents[int(doc_id)].copy()
-            doc["score"] = float(score)
-            results.append(doc)
+    prompt = f"""
+Você é o FertIntelligence AI, um assistente técnico especializado em fertilidade do solo, calagem, gessagem, adubação e interpretação de análise de solo.
 
-        return results
+Responda à pergunta usando SOMENTE as fontes fornecidas abaixo.
 
-    def build_context(self, docs: list[dict]) -> str:
-        parts = []
+Regras obrigatórias:
+- Não invente informações.
+- Não cite documentos que não estejam nas fontes.
+- Ao fazer uma afirmação técnica relevante, cite a fonte no formato [1], [2], [3].
+- Se as fontes não forem suficienteses, diga claramente que os documentos recuperados não são suficientes para responder com segurança.
+- Responda em português brasileiro.
 
-        for i, doc in enumerate(docs, start=1):
-            parts.append(
-                f"[Fonte {i}] {doc['source']} | página {doc['page']} | score {doc['score']:.4f}\n"
-                f"{doc['text']}"
-            )
-
-        return "\n\n".join(parts)
-
-    def answer(self, question: str) -> dict:
-        docs = self.retrieve(question)
-        context = self.build_context(docs)
-
-        user_prompt = f"""
-PERGUNTA:
-{question}
-
-CONTEXTO RECUPERADO:
+FONTES:
 {context}
 
-TAREFA:
-Responda à pergunta usando o contexto acima.
-Inclua uma seção final chamada "Fontes consultadas" com os PDFs e páginas usados.
+PERGUNTA:
+{question}
 """
 
-        response = self.client.chat.completions.create(
-            model=DEEPSEEK_MODEL,
-            messages=[
-                {"role": "system", "content": SYSTEM_PROMPT.strip()},
-                {"role": "user", "content": user_prompt.strip()},
-            ],
-            temperature=0.2,
-        )
+    response = client.chat.completions.create(
+        model=DEEPSEEK_MODEL,
+        messages=[
+            {
+                "role": "system",
+                "content": "Você é um assistente agronômico técnico e rigoroso com as fontes.",
+            },
+            {
+                "role": "user",
+                "content": prompt,
+            },
+        ],
+        temperature=0.2,
+    )
 
-        answer_text = response.choices[0].message.content
+    answer = response.choices[0].message.content
 
-        return {
-            "question": question,
-            "answer": answer_text,
-            "sources": [
-                {
-                    "source": doc["source"],
-                    "page": doc["page"],
-                    "score": doc["score"],
-                    "preview": doc["text"][:300],
-                }
-                for doc in docs
-            ],
+    citations = [
+        {
+            "id": i,
+            "source": source.get("source"),
+            "page": source.get("page"),
+            "score": source.get("score"),
         }
+        for i, source in enumerate(sources, start=1)
+    ]
+
+    return {
+        "answer": answer,
+        "citations": citations,
+    }
 
 
-_agent = None
-
-
-def get_agent() -> FertRagAgent:
-    global _agent
-
-    if _agent is None:
-        _agent = FertRagAgent()
-
-    return _agent
+def get_agent(question: str) -> dict:
+    return ask_agent(question)
