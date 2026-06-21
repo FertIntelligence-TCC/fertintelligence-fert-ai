@@ -1,4 +1,3 @@
-import hashlib
 import json
 import re
 from pathlib import Path
@@ -7,39 +6,17 @@ import faiss
 import numpy as np
 from pypdf import PdfReader
 
-from app.core.config import DOCS_DIR, VECTORSTORE_DIR, EMBEDDING_DIM, CHUNK_SIZE, CHUNK_OVERLAP
+from app.core.config import DOCS_DIR, VECTORSTORE_DIR, CHUNK_SIZE, CHUNK_OVERLAP
+from app.rag.embeddings.hash_provider import HashEmbeddingProvider
 
 
-TOKEN_RE = re.compile(r"[a-záàâãéèêíïóôõöúçñ0-9]+", re.IGNORECASE)
+embedding_provider = HashEmbeddingProvider()
 
 
 def normalize_text(text: str) -> str:
     text = text.replace("\x00", " ")
     text = re.sub(r"\s+", " ", text)
     return text.strip()
-
-
-def tokenize(text: str) -> list[str]:
-    return TOKEN_RE.findall(text.lower())
-
-
-def embed_text(text: str, dim: int = EMBEDDING_DIM) -> np.ndarray:
-    vector = np.zeros(dim, dtype=np.float32)
-
-    tokens = tokenize(text)
-    if not tokens:
-        return vector
-
-    for token in tokens:
-        digest = hashlib.md5(token.encode("utf-8")).hexdigest()
-        idx = int(digest[:8], 16) % dim
-        vector[idx] += 1.0
-
-    norm = np.linalg.norm(vector)
-    if norm > 0:
-        vector = vector / norm
-
-    return vector
 
 
 def chunk_text(text: str, chunk_size: int = CHUNK_SIZE, overlap: int = CHUNK_OVERLAP) -> list[str]:
@@ -80,11 +57,13 @@ def extract_pdf_text(pdf_path: Path) -> list[dict]:
         text = normalize_text(text)
 
         if text:
-            pages.append({
-                "source": pdf_path.name,
-                "page": page_index,
-                "text": text,
-            })
+            pages.append(
+                {
+                    "source": pdf_path.name,
+                    "page": page_index,
+                    "text": text,
+                }
+            )
 
     return pages
 
@@ -109,23 +88,30 @@ def build_index() -> None:
             chunks = chunk_text(page["text"])
 
             for chunk_index, chunk in enumerate(chunks, start=1):
-                documents.append({
-                    "id": len(documents),
-                    "source": page["source"],
-                    "page": page["page"],
-                    "chunk_index": chunk_index,
-                    "text": chunk,
-                })
+                documents.append(
+                    {
+                        "id": len(documents),
+                        "source": page["source"],
+                        "page": page["page"],
+                        "chunk_index": chunk_index,
+                        "text": chunk,
+                    }
+                )
 
     if not documents:
         raise RuntimeError("Nenhum texto foi extraído dos PDFs.")
 
     print(f"[INFO] Chunks gerados: {len(documents)}")
-    print(f"[INFO] Dimensão dos embeddings: {EMBEDDING_DIM}")
+    print(f"[INFO] Dimensão dos embeddings: {embedding_provider.dimension}")
 
-    matrix = np.vstack([embed_text(doc["text"]) for doc in documents]).astype("float32")
+    matrix = np.vstack(
+        [
+            embedding_provider.embed_text(doc["text"]).reshape(-1)
+            for doc in documents
+        ]
+    ).astype("float32")
 
-    index = faiss.IndexFlatIP(EMBEDDING_DIM)
+    index = faiss.IndexFlatIP(embedding_provider.dimension)
     index.add(matrix)
 
     faiss.write_index(index, str(VECTORSTORE_DIR / "index.faiss"))

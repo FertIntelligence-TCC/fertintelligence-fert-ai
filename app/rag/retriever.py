@@ -1,55 +1,26 @@
 import json
 import re
-import hashlib
-import unicodedata
 from pathlib import Path
 from collections import Counter
 
+from app.rag.embeddings.hash_provider import HashEmbeddingProvider
+
 import faiss
-import numpy as np
 
 BASE_DIR = Path(__file__).resolve().parents[2]
 VECTORSTORE_DIR = BASE_DIR / "vectorstore"
 INDEX_PATH = VECTORSTORE_DIR / "index.faiss"
 DOCUMENTS_PATH = VECTORSTORE_DIR / "documents.json"
 
-EMBEDDING_DIM = 1536
-
-STOPWORDS = {
-    "a", "o", "os", "as", "um", "uma", "uns", "umas",
-    "de", "do", "da", "dos", "das", "em", "no", "na", "nos", "nas",
-    "por", "para", "com", "sem", "sobre", "entre",
-    "e", "ou", "que", "se", "como", "qual", "quais",
-    "é", "sao", "são", "ser", "foi", "sua", "seu", "suas", "seus",
-    "isso", "essa", "esse", "esta", "este",
-}
-
-
-def _strip_accents(text: str) -> str:
-    text = unicodedata.normalize("NFKD", text)
-    return "".join(ch for ch in text if not unicodedata.combining(ch))
+embedding_provider = HashEmbeddingProvider()
 
 
 def _tokenize(text: str) -> list[str]:
-    text = _strip_accents(text.lower())
-    tokens = re.findall(r"[a-z0-9]+", text, flags=re.UNICODE)
-    return [t for t in tokens if len(t) > 2 and t not in STOPWORDS]
+    return embedding_provider.tokenize(text)
 
 
-def _embed(text: str) -> np.ndarray:
-    vector = np.zeros(EMBEDDING_DIM, dtype="float32")
-
-    for token in _tokenize(text):
-        digest = hashlib.md5(token.encode("utf-8")).hexdigest()
-        idx = int(digest, 16) % EMBEDDING_DIM
-        vector[idx] += 1.0
-
-    norm = np.linalg.norm(vector)
-    if norm > 0:
-        vector = vector / norm
-
-    return vector.reshape(1, -1)
-
+def _embed(text: str):
+    return embedding_provider.embed_text(text)
 
 def _load_documents() -> list[dict]:
     if not DOCUMENTS_PATH.exists():
