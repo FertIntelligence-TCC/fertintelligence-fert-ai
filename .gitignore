@@ -1,0 +1,13 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+
+vectorstore/
+*.faiss
+documents.json
+
+.idea/
+.vscode/
+
+.DS_Store
