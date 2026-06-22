@@ -50,3 +50,13 @@ class RecommendationResponse(BaseModel):
     technical_alerts: list[str]
 
     next_steps: list[str]
+
+class NarrativeRequest(BaseModel):
+    technical_report: str = Field(..., min_length=10)
+
+
+class NarrativeResponse(BaseModel):
+    improved_report: str
+    sources_used: int
+    citations: list[dict[str, Any]]
+
