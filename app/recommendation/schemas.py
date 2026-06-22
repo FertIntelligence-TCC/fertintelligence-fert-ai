@@ -38,10 +38,13 @@ class RecommendationResponse(BaseModel):
     recommendation_type: RecommendationType
     fertilizer_group: FertilizerGroup
     status: str
+
+    data_used: dict[str, Any]
     interpretation: dict[str, Any]
     diagnosis: list[str]
-    correction_recommendation: dict[str, Any] | None
-    fertilization_recommendation: dict[str, Any] | None
+    correction_recommendation: dict[str, Any]
+    fertilization_recommendation: dict[str, Any]
     fertilizer_suggestions: list[dict[str, Any]]
-    warnings: list[str]
+    technical_alerts: list[str]
+
     next_steps: list[str]
