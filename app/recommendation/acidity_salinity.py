@@ -1,6 +1,6 @@
 from typing import Any
 
-from app.recommendation.common import num as _num
+from app.recommendation.common import num as _num, round_optional
 
 
 def calculate_acidity_salinity_recommendation(
@@ -96,27 +96,27 @@ def calculate_acidity_salinity_recommendation(
         "liming": {
             "status": "CALCULATED" if limestone_dose_t_ha is not None else "INSUFFICIENT_DATA",
             "ph": ph,
-            "sum_of_bases_cmolc_dm3": sb,
-            "ctc_ph_7_cmolc_dm3": t_ctc,
-            "current_base_saturation_percent": current_v,
-            "target_base_saturation_percent": target_v,
-            "prnt_percent": prnt,
-            "liming_need_t_ha": liming_need_t_ha,
-            "limestone_dose_t_ha": limestone_dose_t_ha,
+            "sum_of_bases_cmolc_dm3": round_optional(sb),
+            "ctc_ph_7_cmolc_dm3": round_optional(t_ctc),
+            "current_base_saturation_percent": round_optional(current_v),
+            "target_base_saturation_percent": round_optional(target_v),
+            "prnt_percent": round_optional(prnt),
+            "liming_need_t_ha": round_optional(liming_need_t_ha),
+            "limestone_dose_t_ha": round_optional(limestone_dose_t_ha),
             "method": "Saturação por bases: NC = T x (V2 - V1) / 100; dose corrigida por PRNT.",
         },
         "gypsum": {
             "status": "INITIAL_SCREENING",
             "needed": gypsum_needed,
             "reasons": gypsum_reasons,
-            "aluminum_saturation_percent": aluminum_saturation,
+            "aluminum_saturation_percent": round_optional(aluminum_saturation),
             "note": "Triagem inicial. A dose final de gesso será refinada na próxima etapa com dados de subsuperfície e textura.",
         },
         "salinity_correction": {
             "status": "INITIAL_SCREENING" if saturation_extract_analysis else "NOT_EVALUATED",
-            "electrical_conductivity_ds_m": ec,
-            "pst_percent": pst,
-            "sar": sar,
+            "electrical_conductivity_ds_m": round_optional(ec),
+            "pst_percent": round_optional(pst),
+            "sar": round_optional(sar),
             "classification": salinity_class,
             "alerts": salinity_alerts,
         },

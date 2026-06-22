@@ -17,3 +17,9 @@ def num(data: dict[str, Any] | None, *keys: str) -> float | None:
             continue
 
     return None
+
+
+def round_optional(value: float | None, digits: int = 2) -> float | None:
+    if value is None:
+        return None
+    return round(value, digits)
