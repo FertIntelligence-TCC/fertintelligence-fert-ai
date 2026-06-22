@@ -3,6 +3,8 @@ from pydantic import BaseModel, Field
 
 from app.rag.retriever import retrieve_sources
 from app.rag.agent import ask_agent
+from app.recommendation.schemas import RecommendationRequest, RecommendationResponse
+from app.recommendation.service import generate_recommendation_stub
 
 
 router = APIRouter(prefix="/api/ai", tags=["Agronomic AI"])
@@ -33,3 +35,9 @@ def retrieve(request: RetrieveRequest):
         "question": request.question,
         "sources": retrieve_sources(request.question, request.top_k),
     }
+
+
+@router.post("/recommendation", response_model=RecommendationResponse)
+def recommendation(request: RecommendationRequest):
+    return generate_recommendation_stub(request)
+
