@@ -1,6 +1,6 @@
 from typing import Any
 
-from app.recommendation.engine import calculate_acidity_salinity_recommendation, calculate_fertilization_recommendation
+from app.recommendation.engine import calculate_acidity_salinity_recommendation, calculate_fertilization_recommendation, solve_fertilizer_doses
 from app.recommendation.schemas import (
     RecommendationRequest,
     RecommendationResponse,
@@ -58,6 +58,7 @@ def _build_data_used(request: RecommendationRequest) -> dict[str, Any]:
             request.leaf_analysis_interpretation_table
         ),
         "fertilizer_group": request.fertilizer_group,
+        "fertilizer_source": _summarize_entity(request.fertilizer_source),
     }
 
 
@@ -180,20 +181,25 @@ def _build_fertilization_recommendation(request: RecommendationRequest) -> dict[
 
 
 def _build_fertilizer_suggestions(request: RecommendationRequest) -> list[dict[str, Any]]:
+    if request.recommendation_type != RecommendationType.FERTILIZATION:
+        return []
+
+    fertilization = _build_fertilization_recommendation(request)
+    nutrient_recommendation = fertilization.get("nutrient_recommendation", {})
+
+    suggestions = solve_fertilizer_doses(
+        nutrient_recommendation=nutrient_recommendation,
+        fertilizer_source=request.fertilizer_source,
+    )
+
+    if suggestions:
+        return suggestions
+
     return [
         {
-            "status": "PENDING_SOLVER",
+            "status": "INSUFFICIENT_DATA",
             "fertilizer_group": request.fertilizer_group,
-            "message": (
-                "As sugestões de fertilizantes comerciais serão calculadas após a implementação "
-                "do solver de doses, usando o grupo selecionado: PRIVATE, PUBLIC ou DEFAULT."
-            ),
-            "expected_outputs": [
-                "fertilizante",
-                "dose kg/ha",
-                "nutrientes fornecidos",
-                "déficit ou excesso residual",
-            ],
+            "message": "Não foi possível sugerir fertilizantes porque não vieram doses NPK calculadas ou lista de fertilizantes comerciais.",
         }
     ]
 
