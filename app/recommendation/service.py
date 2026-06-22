@@ -1,5 +1,6 @@
 from typing import Any
 
+from app.recommendation.engine import calculate_acidity_salinity_recommendation
 from app.recommendation.schemas import (
     RecommendationRequest,
     RecommendationResponse,
@@ -138,39 +139,19 @@ def _build_diagnosis(request: RecommendationRequest) -> list[str]:
 
 
 def _build_correction_recommendation(request: RecommendationRequest) -> dict[str, Any]:
-    enabled = request.recommendation_type == RecommendationType.ACIDITY_SALINITY
+    if request.recommendation_type != RecommendationType.ACIDITY_SALINITY:
+        return {
+            "enabled": False,
+            "status": "NOT_REQUESTED",
+            "liming": {"status": "NOT_REQUESTED"},
+            "gypsum": {"status": "NOT_REQUESTED"},
+            "salinity_correction": {"status": "NOT_REQUESTED"},
+        }
 
-    return {
-        "enabled": enabled,
-        "status": "PLANNED" if enabled else "NOT_REQUESTED",
-        "liming": {
-            "status": "PENDING_ENGINE",
-            "expected_outputs": [
-                "necessidade de calagem",
-                "dose de calcário",
-                "critério utilizado",
-                "PRNT considerado",
-                "saturação por bases atual e desejada",
-            ],
-        },
-        "gypsum": {
-            "status": "PENDING_ENGINE",
-            "expected_outputs": [
-                "necessidade de gessagem",
-                "dose de gesso agrícola",
-                "critérios de alumínio, cálcio e saturação em subsuperfície",
-            ],
-        },
-        "salinity_correction": {
-            "status": "PENDING_ENGINE",
-            "expected_outputs": [
-                "classificação de salinidade/sodicidade",
-                "necessidade de lixiviação",
-                "necessidade de condicionador químico",
-                "alertas de manejo de irrigação e drenagem",
-            ],
-        },
-    }
+    return calculate_acidity_salinity_recommendation(
+        fertility_analysis=request.fertility_analysis,
+        saturation_extract_analysis=request.saturation_extract_analysis,
+    )
 
 
 def _build_fertilization_recommendation(request: RecommendationRequest) -> dict[str, Any]:
