@@ -32,11 +32,13 @@ class RecommendationRequest(BaseModel):
     leaf_analysis_interpretation_table: dict[str, Any] | None = None
 
     fertilizer_group: FertilizerGroup
+    fertilizer_source: dict[str, Any] | None = None
 
 
 class RecommendationResponse(BaseModel):
     recommendation_type: RecommendationType
     fertilizer_group: FertilizerGroup
+    fertilizer_source: dict[str, Any] | None = None
     status: str
 
     data_used: dict[str, Any]
