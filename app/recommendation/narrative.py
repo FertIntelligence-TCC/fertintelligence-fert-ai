@@ -1,7 +1,12 @@
+import logging
+
 from openai import OpenAI
 
 from app.core import config
 from app.rag.retriever import retrieve_sources
+
+
+logger = logging.getLogger(__name__)
 
 
 client = OpenAI(
@@ -26,8 +31,21 @@ Página: {source.get("page")}
     return "\n".join(blocks)
 
 
+def _empty_response(technical_report: str) -> dict:
+    return {
+        "improved_report": technical_report,
+        "sources_used": 0,
+        "citations": [],
+    }
+
+
 def improve_recommendation_narrative(technical_report: str) -> dict:
-    sources = retrieve_sources(technical_report, top_k=5)
+    try:
+        sources = retrieve_sources(technical_report, top_k=5)
+    except FileNotFoundError:
+        logger.warning("RAG index not found; continuing without sources")
+        sources = []
+
     context = _build_context(sources)
 
     prompt = f"""
@@ -69,25 +87,29 @@ LAUDO ORIGINAL:
 {technical_report}
 """
 
-    response = client.chat.completions.create(
-        model=config.DEEPSEEK_MODEL,
-        messages=[
-            {
-                "role": "system",
-                "content": (
-                    "Você é um engenheiro agrônomo rigoroso. "
-                    "Você melhora a redação de laudos sem modificar cálculos, doses ou recomendações."
-                ),
-            },
-            {
-                "role": "user",
-                "content": prompt,
-            },
-        ],
-        temperature=0.15,
-    )
+    try:
+        response = client.chat.completions.create(
+            model=config.DEEPSEEK_MODEL,
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "Você é um engenheiro agrônomo rigoroso. "
+                        "Você melhora a redação de laudos sem modificar cálculos, doses ou recomendações."
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": prompt,
+                },
+            ],
+            temperature=0.15,
+        )
+    except Exception:
+        logger.warning("DeepSeek narrative generation failed; returning original technical report")
+        return _empty_response(technical_report)
 
-    improved_report = response.choices[0].message.content or ""
+    improved_report = response.choices[0].message.content or technical_report
 
     return {
         "improved_report": improved_report.strip(),
