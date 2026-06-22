@@ -1,6 +1,6 @@
 from typing import Any
 
-from app.recommendation.engine import calculate_acidity_salinity_recommendation
+from app.recommendation.engine import calculate_acidity_salinity_recommendation, calculate_fertilization_recommendation
 from app.recommendation.schemas import (
     RecommendationRequest,
     RecommendationResponse,
@@ -155,32 +155,28 @@ def _build_correction_recommendation(request: RecommendationRequest) -> dict[str
 
 
 def _build_fertilization_recommendation(request: RecommendationRequest) -> dict[str, Any]:
-    enabled = request.recommendation_type == RecommendationType.FERTILIZATION
+    if request.recommendation_type != RecommendationType.FERTILIZATION:
+        return {
+            "enabled": False,
+            "status": "NOT_REQUESTED",
+            "nutrient_recommendation": {"status": "NOT_REQUESTED"},
+            "table_crossing": {
+                "crop_table_available": _has_data(request.crop_fertilization_table),
+                "soil_interpretation_table_available": _has_data(
+                    request.soil_fertility_interpretation_table
+                ),
+                "leaf_interpretation_table_available": _has_data(
+                    request.leaf_analysis_interpretation_table
+                ),
+            },
+        }
 
-    return {
-        "enabled": enabled,
-        "status": "PLANNED" if enabled else "NOT_REQUESTED",
-        "nutrient_recommendation": {
-            "status": "PENDING_ENGINE",
-            "expected_outputs": [
-                "dose de N",
-                "dose de P2O5",
-                "dose de K2O",
-                "micronutrientes quando aplicável",
-                "parcelamento",
-                "modo de aplicação",
-            ],
-        },
-        "table_crossing": {
-            "crop_table_available": _has_data(request.crop_fertilization_table),
-            "soil_interpretation_table_available": _has_data(
-                request.soil_fertility_interpretation_table
-            ),
-            "leaf_interpretation_table_available": _has_data(
-                request.leaf_analysis_interpretation_table
-            ),
-        },
-    }
+    return calculate_fertilization_recommendation(
+        fertility_analysis=request.fertility_analysis,
+        crop=request.crop,
+        crop_fertilization_table=request.crop_fertilization_table,
+        soil_fertility_interpretation_table=request.soil_fertility_interpretation_table,
+    )
 
 
 def _build_fertilizer_suggestions(request: RecommendationRequest) -> list[dict[str, Any]]:
